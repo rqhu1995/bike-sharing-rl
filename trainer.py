@@ -148,9 +148,7 @@ def train(actor, critic, task, num_nodes, train_data, valid_data, reward_fn,
         print("training at epoch: " + str(epoch))
 
         actor.train()
-        # print("actor train done")
         critic.train()
-        # print("critic train done")
 
         times, losses, rewards, critic_rewards = [], [], [], []
 
@@ -166,31 +164,31 @@ def train(actor, critic, task, num_nodes, train_data, valid_data, reward_fn,
 
             # Full forward pass through the dataset
             tour_indices, tour_logp = actor(static, dynamic, x0)
-            # print("tour indices")
+
             # Sum the log probabilities for each city in the tour
             reward = reward_fn(static, dynamic, tour_indices)
-            # print("reward calculated")
+
             # Query the critic for an estimate of the reward
             critic_est = critic(static, dynamic).view(-1)
 
             advantage = (reward - critic_est)
             actor_loss = torch.mean(advantage.detach() * tour_logp.sum(dim=1))
             critic_loss = torch.mean(advantage ** 2)
-            # print("loss calculated")
+
             actor_optim.zero_grad()
             actor_loss.backward()
             torch.nn.utils.clip_grad_norm_(actor.parameters(), max_grad_norm)
             actor_optim.step()
-            # print("actor opt started")
+
             critic_optim.zero_grad()
             critic_loss.backward()
             torch.nn.utils.clip_grad_norm_(critic.parameters(), max_grad_norm)
             critic_optim.step()
-            # print("critic opt started")
+
             critic_rewards.append(torch.mean(critic_est.detach()).item())
             rewards.append(torch.mean(reward.detach()).item())
             losses.append(torch.mean(actor_loss.detach()).item())
-            # print("loss writing...")
+
             if (batch_idx + 1) % 100 == 0:
                 end = time.time()
                 times.append(end - start)
@@ -202,11 +200,10 @@ def train(actor, critic, task, num_nodes, train_data, valid_data, reward_fn,
                 print('  Batch %d/%d, reward: %2.3f, loss: %2.4f, took: %2.4fs' %
                       (batch_idx, len(train_loader), mean_reward, mean_loss,
                        times[-1]))
-            # print("batch " + str(batch_idx) + " done")
+
 
         mean_loss = np.mean(losses)
         mean_reward = np.mean(rewards)
-        # print("mean loss, reward, done")
 
         # Save the weights
         epoch_dir = os.path.join(checkpoint_dir, '%s' % epoch)
@@ -313,12 +310,6 @@ def train_vrp(args):
 
 
 if __name__ == '__main__':
-
-    # logger.add('logs/bss-rl.log',
-    #        level='DEBUG',
-    #        format='{time:YYYY-MM-DD :mm:ss} - {level} - {file} - {line} - {message}',
-    #        rotation="10 MB")
-
     parser = argparse.ArgumentParser(description='Combinatorial Optimization')
     parser.add_argument('--seed', default=12345, type=int)
     parser.add_argument('--checkpoint', default=None)

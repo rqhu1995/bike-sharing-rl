@@ -79,10 +79,6 @@ class BSRDataset(Dataset):
         # All states will have their own intrinsic demand in [1, max_demand),
         # then scaled by the maximum load. E.g. if load=10 and max_demand=30,
         # demands will be scaled to the range (0, 3)
-        # demands = torch.randint(0, 1, dynamic_shape) - 1
-        # demands = demands / float(max_load)
-
-        # demands[:, 0, 0] = 0  # depot starts with a demand of 0
         self.dynamic = torch.tensor(np.concatenate((loads, demands), axis=1))
 
     def __len__(self):
@@ -109,9 +105,7 @@ class BSRDataset(Dataset):
             return demands * 0.
 
         # Otherwise, we can choose to go anywhere where demand is > 0
-        # new_mask = demands.ne(0) * demands.lt(loads)
         new_mask = demands.ne(0)
-        # print(new_mask.shape)
 
         # We should avoid traveling to the depot back-to-back
         repeat_home = chosen_idx.ne(0)
@@ -141,17 +135,8 @@ class BSRDataset(Dataset):
         # Update the dynamic elements differently for if we visit depot vs. a city
         visit = chosen_idx.ne(0)
         depot = chosen_idx.eq(0)
-        # logger.info("visit:")
-        # logger.info(visit)
-        # Clone the dynamic variable so we don't mess up graph
         all_loads = dynamic[:, 0].clone()
         all_demands = dynamic[:, 1].clone()
-
-        # logger.info("before --- all_loads:")
-        # logger.info(all_loads)
-
-        # logger.info("before --- all_demands:")
-        # logger.info(all_demands)
 
         load = torch.gather(all_loads, 1, chosen_idx.unsqueeze(1))
         demand = torch.gather(all_demands, 1, chosen_idx.unsqueeze(1))
@@ -165,17 +150,10 @@ class BSRDataset(Dataset):
 
             # Broadcast the load to all nodes, but update demand seperately
             visit_idx = visit.nonzero().squeeze()
-            # logger.info("visit index")
-            # logger.info(visit_idx)
+
             all_loads[visit_idx] = new_load[visit_idx]
             all_demands[visit_idx, chosen_idx[visit_idx]] = new_demand[visit_idx].view(-1)
-            # all_demands[visit_idx, 0] = -1. + new_load[visit_idx].view(-1)
-
-            # logger.info("after --- all_loads:")
-            # logger.info(all_loads)
-
-            # logger.info("after --- all_demands:")
-            # logger.info(all_demands)
+            
 
         # Return to depot to fill vehicle load
         if depot.any():
@@ -202,17 +180,13 @@ def reward(static, dynamic, tour_indices):
             pt_1 = (y[:, 1:][i][j][0], y[:, 1:][i][j][1])
             tour_len += hs.haversine(pt_0, pt_1)
         total_tour_len.append(tour_len)
-    # tour_len = torch.sqrt(torch.sum(torch.pow(y[:, :-1] - y[:, 1:], 2), dim=2))
     all_demands = dynamic[:, 1].clone()
-    # total_unsat = torch.sum(torch.abs(all_demands))
 
     total_unsat = torch.sum(torch.abs(all_demands),dim=1)
 
-    # logger.info(total_tour_len)
-    # logger.info(total_unsat)
+
 
     total_obj = torch.tensor(total_tour_len).to('cuda') + total_unsat
-    # logger.info(total_obj)
 
     total_obj = torch.tensor(total_obj).to(torch.double).to('cuda')
 
@@ -237,9 +211,6 @@ def render(static, tour_indices, save_path):
 
         # Convert the indices back into a tour
         idx = tour_indices[i]
-        print(tour_indices.size())
-        print(tour_indices)
-        print(idx)
         if len(idx.size()) == 1:
             idx = idx.unsqueeze(0)
 
@@ -268,8 +239,5 @@ def render(static, tour_indices, save_path):
         ax.scatter(x, y, s=4, c='r', zorder=2)
         ax.scatter(x[0], y[0], s=20, c='k', marker='*', zorder=3)
 
-        # ax.set_xlim(0, 1)
-        # ax.set_ylim(0, 1)
 
-    # plt.tight_layout()
     plt.savefig(save_path, dpi=200)

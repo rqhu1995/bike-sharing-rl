@@ -21,8 +21,6 @@ import sys
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-# device = torch.device('cpu')
-
 class Encoder(nn.Module):
     """Encodes the static & dynamic states using 1d Convolution."""
 
@@ -100,7 +98,7 @@ class Pointer(nn.Module):
             # If > 1 layer dropout is already applied
             last_hh = self.drop_hh(last_hh)
 
-            # Given a summary of the output, find an  input context
+            # Given a summary of the output, find an input context
         enc_attn = self.encoder_attn(static_hidden, dynamic_hidden, rnn_out)
         context = enc_attn.bmm(static_hidden.permute(0, 2, 1))  # (B, 1, num_feats)
 
@@ -191,11 +189,7 @@ class DRL4TSP(nn.Module):
         """
 
         batch_size, input_size, sequence_size = static.size()
-        # logger.info("static:")
-        # logger.info(static)
 
-        # logger.info("dynamic:")
-        # logger.info(dynamic)
 
         if decoder_input is None:
             decoder_input = self.x0.expand(batch_size, -1, -1)
@@ -205,7 +199,6 @@ class DRL4TSP(nn.Module):
 
         # Structures for holding the output sequences
         tour_idx, tour_logp = [], []
-        visited = []
         max_steps = sequence_size if self.mask_fn is None else 100
 
         # Static elements only need to be processed once, and can be used across
@@ -215,7 +208,6 @@ class DRL4TSP(nn.Module):
         dynamic_hidden = self.dynamic_encoder(dynamic)
 
         for _ in range(max_steps):
-            # print(mask.byte())
             if not mask.byte().any():
                 break
 
@@ -226,10 +218,8 @@ class DRL4TSP(nn.Module):
                                           decoder_hidden, last_hh)
 
             probs = F.softmax(probs + mask.log(), dim=1)
-            # logger.info("probs:")
-            # logger.info(probs)
+
             
-            # torch.save(probs, "probs.pt")
             if torch.isnan(probs).any():
                 break
 
@@ -241,7 +231,7 @@ class DRL4TSP(nn.Module):
                 # Sometimes an issue with Categorical & sampling on GPU; See:
                 # https://github.com/pemami4911/neural-combinatorial-rl-pytorch/issues/5
                 ptr = m.sample()
-                # print(ptr.data)
+
                 while not torch.gather(mask, 1, ptr.data.unsqueeze(1)).byte().all():
                     ptr = m.sample()
                 logp = m.log_prob(ptr)
@@ -249,8 +239,6 @@ class DRL4TSP(nn.Module):
                 prob, ptr = torch.max(probs, 1)  # Greedy
                 logp = prob.log()
             
-            # logger.info("selected:")
-            # logger.info(ptr)
 
             # After visiting a node update the dynamic representation
             if self.update_fn is not None:
