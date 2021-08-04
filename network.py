@@ -197,6 +197,9 @@ class DRL4TSP(nn.Module):
         # Always use a mask - if no function is provided, we don't update it
         mask = torch.ones(batch_size, sequence_size, device=device)
 
+        mask[:,0] = 0
+
+
         # Structures for holding the output sequences
         tour_idx, tour_logp = [], []
         max_steps = sequence_size if self.mask_fn is None else 100
@@ -206,11 +209,15 @@ class DRL4TSP(nn.Module):
         # their representations will need to get calculated again.
         static_hidden = self.static_encoder(static)
         dynamic_hidden = self.dynamic_encoder(dynamic)
-
+        # print("最长步数")
+        # print(max_steps)
         for _ in range(max_steps):
             if not mask.byte().any():
+                # print(mask.byte())
+                # print("因为mask结束了")
                 break
-
+            # print("当前序列")
+            # print(_)
             # ... but compute a hidden rep for each element added to sequence
             decoder_hidden = self.decoder(decoder_input)
             probs, last_hh = self.pointer(static_hidden,
@@ -219,7 +226,8 @@ class DRL4TSP(nn.Module):
 
             probs = F.softmax(probs + mask.log(), dim=1)
 
-            
+            # print("当前probs")
+            # print(probs)
             if torch.isnan(probs).any():
                 break
 
@@ -265,5 +273,6 @@ class DRL4TSP(nn.Module):
 
         tour_idx = torch.cat(tour_idx, dim=1)  # (batch_size, seq_len)
         tour_logp = torch.cat(tour_logp, dim=1)  # (batch_size, seq_len)
+        print(tour_idx)
 
-        return tour_idx, tour_logp
+        return tour_idx, tour_logp, dynamic

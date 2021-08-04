@@ -9,6 +9,7 @@
 
 """
 
+import sys
 from loguru import logger
 import matplotlib
 import matplotlib.pyplot as plt
@@ -34,52 +35,95 @@ class BSRDataset(Dataset):
         """
         super(BSRDataset, self).__init__()
 
-        if seed is None:
-            seed = np.random.randint(1234567890)
-        # np.random.seed(seed)
-        torch.manual_seed(seed)
-
         self.sample_size = sample_size
         self.max_load = max_load
         self.max_demand = max_demand
+        # print(sample_size)
+        # single instance test
+        if sample_size == 1:
+            # print("xxxx")
+            station_total = pd.read_csv("data/test_stations.csv")
+            selected_points = station_total[['latitude', 'longitude']].to_numpy()
+            selected_demands = station_total[['demand']].to_numpy()
+            samples_cords = []
+            samples_demand = []
 
-        station_total = pd.read_csv("data/station_info.csv")
-        station_cords = station_total[['latitude', 'longitude']].to_numpy()
-        docks = station_total[['availableDocks']].to_numpy()
-        samples_cords = []
-        samples_demand = []
-        selected_station_id = []
-
-        for i in range(sample_size):
-            idx = np.random.randint(len(station_total), size=input_size)
-            selected_station_id.append(idx)
-            selected_points = station_cords[idx, :]
-            selected_docks = docks[idx, :]
-            rates = np.random.randint(-100, 100, len(selected_docks)) / 100.0
-            rand_demand = np.multiply(selected_docks.T.reshape(1, -1), rates.reshape(1, -1)) / 60.0
             centroid_point = Polygon(selected_points).centroid
-            selected_points = np.insert(selected_points, 0, 
-                                        np.array([[centroid_point.x, centroid_point.y]]), axis=0)
-            rand_demand = np.insert(rand_demand, 0, 0, axis=1)
-            samples_cords.append(selected_points.T)
-            samples_demand.append(rand_demand.reshape(1, -1))
-        locations = torch.tensor(np.array(samples_cords))
-        demands = torch.tensor(np.array(samples_demand))
+            # print(centroid_point)
+            # sys.exit()
+            selected_points = np.insert(selected_points, 0, np.array([[centroid_point.x, centroid_point.y]]), axis=0)
+            samples_cords = np.tile(selected_points.T, (sample_size, 1, 1))
 
-        # location are sampled from station list give fixed size
-        # Depot location will be the centroid of the sampled stations
-        self.static = locations
+            for i in range(sample_size):
+                # rates = np.random.randint(-100, 100, len(selected_docks)) / 100.0
+                rand_demand = selected_demands / 60.0
 
-        # All states will broadcast the drivers current load
-        # Note that we only use a load between [0, 1] to prevent large
-        # numbers entering the neural network
-        dynamic_shape = (sample_size, 1, input_size + 1)
-        loads = torch.full(dynamic_shape, 1.)
+                rand_demand = np.insert(rand_demand, 0, 0, axis=0)
+                # samples_cords.append(selected_points.T)
+                samples_demand.append(rand_demand.reshape(1, -1))
 
-        # All states will have their own intrinsic demand in [1, max_demand),
-        # then scaled by the maximum load. E.g. if load=10 and max_demand=30,
-        # demands will be scaled to the range (0, 3)
-        self.dynamic = torch.tensor(np.concatenate((loads, demands), axis=1))
+            locations = torch.tensor(samples_cords)
+            demands = torch.tensor(np.array(samples_demand))
+
+            # location are sampled from station list give fixed size
+            # Depot location will be the centroid of the sampled stations
+            self.static = locations
+
+            # All states will broadcast the drivers current load
+            # Note that we only use a load between [0, 1] to prevent large
+            # numbers entering the neural network
+            dynamic_shape = (sample_size, 1, input_size + 1)
+            loads = torch.full(dynamic_shape, 1.)
+
+            # All states will have their own intrinsic demand in [1, max_demand),
+            # then scaled by the maximum load. E.g. if load=10 and max_demand=30,
+            # demands will be scaled to the range (0, 3)
+            self.dynamic = torch.tensor(np.concatenate((loads, demands), axis=1))
+        else:
+
+            if seed is None:
+                seed = np.random.randint(1234567890)
+            torch.manual_seed(seed)
+
+            self.sample_size = sample_size
+            self.max_load = max_load
+            self.max_demand = max_demand
+
+            station_total = pd.read_csv("data/station_info.csv")[:20]
+            selected_points = station_total[['latitude', 'longitude']].to_numpy()
+            selected_docks = station_total[['availableDocks']].to_numpy()
+            samples_cords = []
+            samples_demand = []
+
+            centroid_point = Polygon(selected_points).centroid
+            selected_points = np.insert(selected_points, 0, np.array([[centroid_point.x, centroid_point.y]]), axis=0)
+            samples_cords = np.tile(selected_points.T, (sample_size, 1, 1))
+
+            for i in range(sample_size):
+                rates = np.random.randint(-100, 100, len(selected_docks)) / 100.0
+                rand_demand = np.multiply(selected_docks.T.reshape(1, -1), rates.reshape(1, -1)) / 60.0
+
+                rand_demand = np.insert(rand_demand, 0, 0, axis=1)
+                # samples_cords.append(selected_points.T)
+                samples_demand.append(rand_demand.reshape(1, -1))
+            locations = torch.tensor(samples_cords)
+            demands = torch.tensor(np.array(samples_demand))
+
+            # location are sampled from station list give fixed size
+            # Depot location will be the centroid of the sampled stations
+            self.static = locations
+
+            # All states will broadcast the drivers current load
+            # Note that we only use a load between [0, 1] to prevent large
+            # numbers entering the neural network
+            dynamic_shape = (sample_size, 1, input_size + 1)
+            loads = torch.full(dynamic_shape, 1.)
+
+            # All states will have their own intrinsic demand in [1, max_demand),
+            # then scaled by the maximum load. E.g. if load=10 and max_demand=30,
+            # demands will be scaled to the range (0, 3)
+            self.dynamic = torch.tensor(np.concatenate((loads, demands), axis=1))
+
 
     def __len__(self):
         return self.sample_size
@@ -99,6 +143,7 @@ class BSRDataset(Dataset):
         loads = dynamic.data[:, 0]  # (batch_size, seq_len)
         demands = dynamic.data[:, 1]  # (batch_size, seq_len)
 
+
         # If there is no positive demand left, we can end the tour.
         # Note that the first node is the depot, which always has a negative demand
         if demands.eq(0).all():
@@ -110,22 +155,36 @@ class BSRDataset(Dataset):
         # We should avoid traveling to the depot back-to-back
         repeat_home = chosen_idx.ne(0)
 
-        if repeat_home.any():
-            new_mask[repeat_home.nonzero(), 0] = 1.
+
+        # if repeat_home.any():
+        #     new_mask[repeat_home.nonzero(), 0] = 1.
         if ~repeat_home.any():
             new_mask[~repeat_home.nonzero(), 0] = 0.
 
         # ... unless we're waiting for all other samples in a minibatch to finish
-        has_no_load = loads[:, 0].eq(0).float()
+        # has_no_load = loads[:, 0].eq(0).float()
         has_no_demand = demands[:, 1:].sum(1).eq(0).float()
 
+
+        if has_no_demand.gt(0).any():
+            new_mask[has_no_demand.nonzero(), 0] = 1.
+            new_mask[has_no_demand.nonzero(), 1:] = 0.
+        
+        # if has_no_load.gt(0):
+        #     new_mask[combined.nonzero(), 0] = 1.
+        #     new_mask[combined.nonzero(), 1:] = 0.
+
+        """
         combined = (has_no_load + has_no_demand).gt(0)
         if combined.any():
             new_mask[combined.nonzero(), 0] = 1.
             new_mask[combined.nonzero(), 1:] = 0.
+        """
         
         for row in range(visited.size()[0]):
             new_mask[row, visited[row]] = 0.
+            # if visited[row].size()[0] == 20:
+            #     new_mask[row, 0] = 1.
         
         return new_mask.float()
 
@@ -140,28 +199,25 @@ class BSRDataset(Dataset):
 
         load = torch.gather(all_loads, 1, chosen_idx.unsqueeze(1))
         demand = torch.gather(all_demands, 1, chosen_idx.unsqueeze(1))
-
         # Across the minibatch - if we've chosen to visit a city, try to satisfy
         # as much demand as possible
         if visit.any():
             new_load = torch.clamp(load - demand, min=0, max=1)
             exact_var = load - new_load
             new_demand = torch.clamp(demand - exact_var, min=-1, max=1)
-
+            new_demand = torch.abs(new_demand)
             # Broadcast the load to all nodes, but update demand seperately
             visit_idx = visit.nonzero().squeeze()
-
             all_loads[visit_idx] = new_load[visit_idx]
             all_demands[visit_idx, chosen_idx[visit_idx]] = new_demand[visit_idx].view(-1)
-            
+            # print(all_demands)
 
         # Return to depot to fill vehicle load
-        if depot.any():
-            all_loads[depot.nonzero().squeeze()] = 1.
-            all_demands[depot.nonzero().squeeze(), 0] = 0.
+        # if depot.any():
+        #     all_loads[depot.nonzero().squeeze()] = 1.
+        #     all_demands[depot.nonzero().squeeze(), 0] = 0.
 
         tensor = torch.cat((all_loads.unsqueeze(1), all_demands.unsqueeze(1)), 1)
-        
         return tensor.clone().detach().to(dynamic.device)
 
 def reward(static, dynamic, tour_indices):
@@ -171,25 +227,23 @@ def reward(static, dynamic, tour_indices):
     idx = tour_indices.unsqueeze(1).expand(-1, static.size(1), -1)
     tour = torch.gather(static.data, 2, idx).permute(0, 2, 1)
     start = static.data[:, :, 0].unsqueeze(1)
-    y = torch.cat((start, tour, start), dim=1)
+    y = torch.cat((start, tour, start), dim=1).to('cpu')
     total_tour_len = []
+    # print(dynamic)
+
     for i in range(y.size(0)):
         tour_len = 0
         for j in range(y.size(1)-1):
-            pt_0 = (y[:, :-1][i][j][0], y[:, :-1][i][j][1])
-            pt_1 = (y[:, 1:][i][j][0], y[:, 1:][i][j][1])
-            tour_len += hs.haversine(pt_0, pt_1)
+            pt_0 = (y[:, :-1][i][j][1], y[:, :-1][i][j][0])
+            pt_1 = (y[:, 1:][i][j][1], y[:, 1:][i][j][0])
+            tour_len += int(np.hypot(pt_0[0]-pt_1[0], pt_0[1]-pt_1[1]) * 1000)
         total_tour_len.append(tour_len)
     all_demands = dynamic[:, 1].clone()
 
     total_unsat = torch.sum(torch.abs(all_demands),dim=1)
-
-
-
-    total_obj = torch.tensor(total_tour_len).to('cuda') + total_unsat
+    total_obj = torch.tensor(total_tour_len).to('cuda') + total_unsat * 60
 
     total_obj = torch.tensor(total_obj).to(torch.double).to('cuda')
-
     return total_obj
 
 

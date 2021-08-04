@@ -110,8 +110,8 @@ def validate(data_loader, actor, reward_fn, render_fn=None, save_dir='.',
         x0 = x0.to(device) if len(x0) > 0 else None
 
         with torch.no_grad():
-            tour_indices, _ = actor.forward(static, dynamic, x0)
-
+            tour_indices, _, dynamic = actor.forward(static, dynamic, x0)
+        # print(tour_indices)
         reward = reward_fn(static, dynamic, tour_indices).mean().item()
         rewards.append(reward)
 
@@ -163,7 +163,7 @@ def train(actor, critic, task, num_nodes, train_data, valid_data, reward_fn,
             x0 = x0.to(device) if len(x0) > 0 else None
 
             # Full forward pass through the dataset
-            tour_indices, tour_logp = actor(static, dynamic, x0)
+            tour_indices, tour_logp, dynamic = actor(static, dynamic, x0)
 
             # Sum the log probabilities for each city in the tour
             reward = reward_fn(static, dynamic, tour_indices)
@@ -200,7 +200,6 @@ def train(actor, critic, task, num_nodes, train_data, valid_data, reward_fn,
                 print('  Batch %d/%d, reward: %2.3f, loss: %2.4f, took: %2.4fs' %
                       (batch_idx, len(train_loader), mean_reward, mean_loss,
                        times[-1]))
-
 
         mean_loss = np.mean(losses)
         mean_reward = np.mean(rewards)
@@ -296,7 +295,8 @@ def train_vrp(args):
     if not args.test:
         train(actor, critic, **kwargs)
 
-    test_data = BSRDataset(args.valid_size,
+    
+    test_data = BSRDataset(1,
                            args.num_nodes,
                            max_load,
                            MAX_DEMAND,
@@ -307,6 +307,7 @@ def train_vrp(args):
     out = validate(test_loader, actor, bss.reward, bss.render, test_dir, num_plot=5)
 
     print('Average tour length: ', out)
+    
 
 
 if __name__ == '__main__':
@@ -319,11 +320,11 @@ if __name__ == '__main__':
     parser.add_argument('--actor_lr', default=5e-4, type=float)
     parser.add_argument('--critic_lr', default=5e-4, type=float)
     parser.add_argument('--max_grad_norm', default=2., type=float)
-    parser.add_argument('--batch_size', default=64, type=int)
+    parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--hidden', dest='hidden_size', default=128, type=int)
     parser.add_argument('--dropout', default=0.1, type=float)
     parser.add_argument('--layers', dest='num_layers', default=1, type=int)
-    parser.add_argument('--train-size', default=10000, type=int)
+    parser.add_argument('--train-size', default=100000, type=int)
     parser.add_argument('--valid-size', default=1000, type=int)
 
     args = parser.parse_args()
