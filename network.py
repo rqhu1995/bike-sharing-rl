@@ -10,6 +10,7 @@
 """
 
 from loguru import logger
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -202,7 +203,7 @@ class DRL4TSP(nn.Module):
 
         # Structures for holding the output sequences
         tour_idx, tour_logp = [], []
-        max_steps = sequence_size if self.mask_fn is None else 100
+        max_steps = sequence_size if self.mask_fn is None else 200
 
         # Static elements only need to be processed once, and can be used across
         # all 'pointing' iterations. When / if the dynamic elements change,
@@ -211,25 +212,29 @@ class DRL4TSP(nn.Module):
         dynamic_hidden = self.dynamic_encoder(dynamic)
         # print("最长步数")
         # print(max_steps)
-        for _ in range(max_steps):
+        
+        for s in range(max_steps):
             if not mask.byte().any():
-                # print(mask.byte())
-                # print("因为mask结束了")
                 break
-            # print("当前序列")
-            # print(_)
+            return_to_depot = (mask[:,0] == 1).any()
+                
+
             # ... but compute a hidden rep for each element added to sequence
             decoder_hidden = self.decoder(decoder_input)
             probs, last_hh = self.pointer(static_hidden,
                                           dynamic_hidden,
                                           decoder_hidden, last_hh)
 
+            
+
             probs = F.softmax(probs + mask.log(), dim=1)
+
 
             # print("当前probs")
             # print(probs)
             if torch.isnan(probs).any():
                 break
+
 
             # When training, sample the next step according to its probability.
             # During testing, we can take the greedy approach and choose highest
@@ -243,14 +248,29 @@ class DRL4TSP(nn.Module):
                 while not torch.gather(mask, 1, ptr.data.unsqueeze(1)).byte().all():
                     ptr = m.sample()
                 logp = m.log_prob(ptr)
+                # print(torch.ones(batch_size, device=device).size())
+
             else:
                 prob, ptr = torch.max(probs, 1)  # Greedy
                 logp = prob.log()
-            
+               # "======"
+                # tour_logp.append(logp.unsqueeze(1))
+                # tour_idx.append(ptr.data.unsqueeze(1))
+            # print("!!!!")
+            # print(ptr.data)
+            # sys.exit()
+            if return_to_depot:
+                prob = torch.ones(batch_size, device=device)
+                logp = prob.log()
+                ptr = torch.zeros(batch_size, device = device, dtype=torch.int64)
 
+            
             # After visiting a node update the dynamic representation
             if self.update_fn is not None:
                 dynamic = self.update_fn(dynamic, ptr.data)
+                # print(ptr)
+                # print(ptr.data)
+                # sys.exit()
                 dynamic_hidden = self.dynamic_encoder(dynamic)
 
                 # Since we compute the VRP in minibatches, some tours may have
@@ -262,6 +282,7 @@ class DRL4TSP(nn.Module):
             # And update the mask so we don't re-visit if we don't need to
             tour_logp.append(logp.unsqueeze(1))
             tour_idx.append(ptr.data.unsqueeze(1))
+            # print(ptr.data)
             if self.mask_fn is not None:
                 mask = self.mask_fn(torch.cat(tour_idx, dim=1), dynamic, ptr.data).detach()
 
@@ -273,6 +294,5 @@ class DRL4TSP(nn.Module):
 
         tour_idx = torch.cat(tour_idx, dim=1)  # (batch_size, seq_len)
         tour_logp = torch.cat(tour_logp, dim=1)  # (batch_size, seq_len)
-        print(tour_idx)
 
         return tour_idx, tour_logp, dynamic

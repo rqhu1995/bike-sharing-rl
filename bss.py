@@ -18,9 +18,10 @@ import pandas as pd
 import torch
 from shapely.geometry import Polygon
 from torch.utils.data import Dataset
-import haversine as hs
+from geopy import distance
 
 matplotlib.use("Agg")
+# working_time = pd.read_csv("data/station_info_all.csv")[['working_time']].to_numpy()
 
 
 class BSRDataset(Dataset):
@@ -41,8 +42,7 @@ class BSRDataset(Dataset):
         # print(sample_size)
         # single instance test
         if sample_size == 1:
-            # print("xxxx")
-            station_total = pd.read_csv("data/test_stations.csv")
+            station_total = pd.read_csv("data/static_stations_all.csv")[:100]
             selected_points = station_total[['latitude', 'longitude']].to_numpy()
             selected_demands = station_total[['demand']].to_numpy()
             samples_cords = []
@@ -89,7 +89,7 @@ class BSRDataset(Dataset):
             self.max_load = max_load
             self.max_demand = max_demand
 
-            station_total = pd.read_csv("data/station_info.csv")[:20]
+            station_total = pd.read_csv("data/static_stations_all.csv")[:100]
             selected_points = station_total[['latitude', 'longitude']].to_numpy()
             selected_docks = station_total[['availableDocks']].to_numpy()
             samples_cords = []
@@ -185,8 +185,12 @@ class BSRDataset(Dataset):
             new_mask[row, visited[row]] = 0.
             # if visited[row].size()[0] == 20:
             #     new_mask[row, 0] = 1.
+            if len(visited[row]) == 50:
+                new_mask[row, 0] = 1.
+
         
         return new_mask.float()
+
 
     def update_dynamic(self, dynamic, chosen_idx):
         """Updates the (load, demand) dataset values."""
@@ -194,9 +198,13 @@ class BSRDataset(Dataset):
         # Update the dynamic elements differently for if we visit depot vs. a city
         visit = chosen_idx.ne(0)
         depot = chosen_idx.eq(0)
+        batch_size = visit.size()[0]
+        if depot.any():
+            all_loads = torch.ones(batch_size, device=dynamic.device)
         all_loads = dynamic[:, 0].clone()
         all_demands = dynamic[:, 1].clone()
-
+        batch_size = all_loads.size()[0]
+        # print(chosen_idx)
         load = torch.gather(all_loads, 1, chosen_idx.unsqueeze(1))
         demand = torch.gather(all_demands, 1, chosen_idx.unsqueeze(1))
         # Across the minibatch - if we've chosen to visit a city, try to satisfy
@@ -217,6 +225,8 @@ class BSRDataset(Dataset):
         #     all_loads[depot.nonzero().squeeze()] = 1.
         #     all_demands[depot.nonzero().squeeze(), 0] = 0.
 
+        # exact_working_time = 
+
         tensor = torch.cat((all_loads.unsqueeze(1), all_demands.unsqueeze(1)), 1)
         return tensor.clone().detach().to(dynamic.device)
 
@@ -224,7 +234,7 @@ def reward(static, dynamic, tour_indices):
     """
     根据静态与动态的数据进行奖励计算
     """
-    idx = tour_indices.unsqueeze(1).expand(-1, static.size(1), -1)
+    idx = (tour_indices).unsqueeze(1).expand(-1, static.size(1), -1)
     tour = torch.gather(static.data, 2, idx).permute(0, 2, 1)
     start = static.data[:, :, 0].unsqueeze(1)
     y = torch.cat((start, tour, start), dim=1).to('cpu')
@@ -233,17 +243,19 @@ def reward(static, dynamic, tour_indices):
 
     for i in range(y.size(0)):
         tour_len = 0
+        # sys.exit()
         for j in range(y.size(1)-1):
-            pt_0 = (y[:, :-1][i][j][1], y[:, :-1][i][j][0])
-            pt_1 = (y[:, 1:][i][j][1], y[:, 1:][i][j][0])
-            tour_len += int(np.hypot(pt_0[0]-pt_1[0], pt_0[1]-pt_1[1]) * 1000)
-        total_tour_len.append(tour_len)
+            pt_0 = (y[:, :-1][i][j][0], y[:, :-1][i][j][1])
+            pt_1 = (y[:, 1:][i][j][0], y[:, 1:][i][j][1])
+            tour_len += int(distance.distance(pt_0, pt_1).m)
+            # tour_len += int(np.hypot(pt_0[0]-pt_1[0], pt_0[1]-pt_1[1]) * 1000)
+        total_tour_len.append(tour_len / 420.0 * 0.42)
     all_demands = dynamic[:, 1].clone()
 
-    total_unsat = torch.sum(torch.abs(all_demands),dim=1)
+    total_unsat = torch.sum(torch.abs(all_demands), dim=1)
     total_obj = torch.tensor(total_tour_len).to('cuda') + total_unsat * 60
-
     total_obj = torch.tensor(total_obj).to(torch.double).to('cuda')
+    print(tour_indices)
     return total_obj
 
 
