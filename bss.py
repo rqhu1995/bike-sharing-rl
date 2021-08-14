@@ -255,7 +255,7 @@ def reward(static, dynamic, tour_indices):
     total_unsat = torch.sum(torch.abs(all_demands), dim=1)
     total_obj = torch.tensor(total_tour_len).to('cuda') + total_unsat * 60
     total_obj = torch.tensor(total_obj).to(torch.double).to('cuda')
-    print(tour_indices)
+    # print(tour_indices)
     return total_obj
 
 
